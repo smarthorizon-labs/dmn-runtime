@@ -1,0 +1,534 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Complex. Transaction fraud and financial-crime triage.
+
+  The shape a fraud or compliance team actually needs, and the reason this
+  engine exists:
+
+  1. **Screening is not scoring.** A sanctions hit is not a high score to be
+     outweighed by good behaviour elsewhere; it blocks, and the model keeps it
+     on a separate path so that no combination of other factors can dilute it.
+
+  2. **Scores are additive and each rule states one reason.** COLLECT SUM over
+     independent factors means a score can always be decomposed back into the
+     rules that produced it — which is what an analyst has to explain to a
+     regulator, and what the execution trace records.
+
+  3. **Banding uses PRIORITY, not rule order.** Reordering the band table
+     cannot change an outcome.
+
+  4. **Every threshold is a rule, not code.** A fraud team retunes thresholds
+     weekly; none of that should require a deployment.
+
+  5. **No clock is read.** The transaction timestamp is an input, so a case can
+     be replayed months later and produce exactly the decision that was made
+     at the time. A model calling now() cannot be audited that way.
+
+  Pair this with a trace at RULES level and value redaction: the trace records
+  which rules fired and why, without writing the cardholder's data to a log.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_08_fraud"
+             name="Fraud Risk Triage"
+             namespace="https://smarthorizon.example/dmn/fraud-risk"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <!-- ============================ types ============================ -->
+
+  <itemDefinition name="tScreeningResult" id="_t_screen">
+    <typeRef>string</typeRef>
+    <allowedValues>
+      <text>"CLEAR","POSSIBLE_MATCH","CONFIRMED_MATCH"</text>
+    </allowedValues>
+  </itemDefinition>
+
+  <itemDefinition name="tTransaction" id="_t_tx">
+    <itemComponent name="amount" id="_t_tx_a"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="currency" id="_t_tx_c"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="channel" id="_t_tx_ch"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="timestamp" id="_t_tx_ts"><typeRef>date and time</typeRef></itemComponent>
+    <itemComponent name="merchantCategory" id="_t_tx_mc"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="cardPresent" id="_t_tx_cp"><typeRef>boolean</typeRef></itemComponent>
+    <itemComponent name="counterpartyCountry" id="_t_tx_cc"><typeRef>string</typeRef></itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tCustomer" id="_t_cust">
+    <itemComponent name="accountAgeDays" id="_t_c_age"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="riskRating" id="_t_c_rr"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="isPEP" id="_t_c_pep"><typeRef>boolean</typeRef></itemComponent>
+    <itemComponent name="sanctionsScreening" id="_t_c_scr"><typeRef>tScreeningResult</typeRef></itemComponent>
+    <itemComponent name="homeCountry" id="_t_c_hc"><typeRef>string</typeRef></itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tBehaviour" id="_t_behav">
+    <itemComponent name="txCount24h" id="_t_b_c"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="txAmount24h" id="_t_b_a"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="distinctCountries7d" id="_t_b_d"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="priorConfirmedFraud" id="_t_b_f"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="averageTicket90d" id="_t_b_t"><typeRef>number</typeRef></itemComponent>
+  </itemDefinition>
+
+  <!-- ============================ inputs ============================ -->
+
+  <inputData name="Transaction" id="_i_tx">
+    <variable name="Transaction" typeRef="tTransaction"/>
+  </inputData>
+
+  <inputData name="Customer" id="_i_cust">
+    <variable name="Customer" typeRef="tCustomer"/>
+  </inputData>
+
+  <inputData name="Behaviour" id="_i_behav">
+    <variable name="Behaviour" typeRef="tBehaviour"/>
+  </inputData>
+
+  <inputData name="High Risk Countries" id="_i_hrc">
+    <!-- A list, so the jurisdiction set is data rather than a rule column. -->
+    <variable name="High Risk Countries"/>
+  </inputData>
+
+  <!-- ======================= scoring components ======================= -->
+
+  <businessKnowledgeModel name="Amount Score" id="_bkm_amount">
+    <variable name="Amount Score" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="amount" typeRef="number"/>
+      <formalParameter name="averageTicket" typeRef="number"/>
+      <decisionTable id="_dt_amount" hitPolicy="COLLECT" aggregation="SUM">
+        <input id="_dt_am_abs">
+          <inputExpression typeRef="number"><text>amount</text></inputExpression>
+        </input>
+        <input id="_dt_am_ratio">
+          <inputExpression typeRef="number">
+            <!-- Guard the divisor: a new customer has no average yet. -->
+            <text>if averageTicket &gt; 0 then amount / averageTicket else 1</text>
+          </inputExpression>
+        </input>
+        <output id="_dt_am_out" typeRef="number"/>
+
+        <rule id="_ra_large">
+          <inputEntry><text>&gt;= 10000</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>25</text></outputEntry>
+        </rule>
+        <rule id="_ra_medium">
+          <inputEntry><text>[2000..10000)</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>10</text></outputEntry>
+        </rule>
+        <rule id="_ra_structuring">
+          <!-- Just under a common reporting threshold: a classic pattern. -->
+          <inputEntry><text>[9000..10000)</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>20</text></outputEntry>
+        </rule>
+        <rule id="_ra_out_of_pattern">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>&gt;= 10</text></inputEntry>
+          <outputEntry><text>20</text></outputEntry>
+        </rule>
+        <rule id="_ra_above_pattern">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>[4..10)</text></inputEntry>
+          <outputEntry><text>10</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel name="Velocity Score" id="_bkm_velocity">
+    <variable name="Velocity Score" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="count24h" typeRef="number"/>
+      <formalParameter name="amount24h" typeRef="number"/>
+      <decisionTable id="_dt_velocity" hitPolicy="COLLECT" aggregation="SUM">
+        <input id="_dt_v_c">
+          <inputExpression typeRef="number"><text>count24h</text></inputExpression>
+        </input>
+        <input id="_dt_v_a">
+          <inputExpression typeRef="number"><text>amount24h</text></inputExpression>
+        </input>
+        <output id="_dt_v_out" typeRef="number"/>
+
+        <rule id="_rv_burst">
+          <inputEntry><text>&gt;= 15</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>25</text></outputEntry>
+        </rule>
+        <rule id="_rv_elevated">
+          <inputEntry><text>[8..15)</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>12</text></outputEntry>
+        </rule>
+        <rule id="_rv_value">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>&gt;= 25000</text></inputEntry>
+          <outputEntry><text>20</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel name="Geography Score" id="_bkm_geo">
+    <variable name="Geography Score" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="counterparty" typeRef="string"/>
+      <formalParameter name="home" typeRef="string"/>
+      <formalParameter name="countries7d" typeRef="number"/>
+      <formalParameter name="highRisk"/>
+      <decisionTable id="_dt_geo" hitPolicy="COLLECT" aggregation="SUM">
+        <input id="_dt_g_hr">
+          <inputExpression typeRef="boolean">
+            <text>list contains(highRisk, counterparty)</text>
+          </inputExpression>
+        </input>
+        <input id="_dt_g_cross">
+          <inputExpression typeRef="boolean">
+            <text>counterparty != home</text>
+          </inputExpression>
+        </input>
+        <input id="_dt_g_spread">
+          <inputExpression typeRef="number"><text>countries7d</text></inputExpression>
+        </input>
+        <output id="_dt_g_out" typeRef="number"/>
+
+        <rule id="_rg_high_risk">
+          <inputEntry><text>true</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>30</text></outputEntry>
+        </rule>
+        <rule id="_rg_cross_border">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>true</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>5</text></outputEntry>
+        </rule>
+        <rule id="_rg_spread">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>&gt;= 4</text></inputEntry>
+          <outputEntry><text>15</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel name="Profile Score" id="_bkm_profile">
+    <variable name="Profile Score" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="accountAgeDays" typeRef="number"/>
+      <formalParameter name="riskRating" typeRef="string"/>
+      <formalParameter name="priorFraud" typeRef="number"/>
+      <decisionTable id="_dt_profile" hitPolicy="COLLECT" aggregation="SUM">
+        <input id="_dt_p_age">
+          <inputExpression typeRef="number"><text>accountAgeDays</text></inputExpression>
+        </input>
+        <input id="_dt_p_rr">
+          <inputExpression typeRef="string"><text>riskRating</text></inputExpression>
+        </input>
+        <input id="_dt_p_pf">
+          <inputExpression typeRef="number"><text>priorFraud</text></inputExpression>
+        </input>
+        <output id="_dt_p_out" typeRef="number"/>
+
+        <rule id="_rp_new">
+          <inputEntry><text>&lt; 30</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>15</text></outputEntry>
+        </rule>
+        <rule id="_rp_established">
+          <inputEntry><text>&gt;= 730</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>0</text></inputEntry>
+          <outputEntry><text>-10</text></outputEntry>
+        </rule>
+        <rule id="_rp_rating">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>"HIGH"</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>20</text></outputEntry>
+        </rule>
+        <rule id="_rp_prior_fraud">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>&gt;= 1</text></inputEntry>
+          <outputEntry><text>25</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel name="Channel Score" id="_bkm_channel">
+    <variable name="Channel Score" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="channel" typeRef="string"/>
+      <formalParameter name="cardPresent" typeRef="boolean"/>
+      <formalParameter name="hourOfDay" typeRef="number"/>
+      <decisionTable id="_dt_channel" hitPolicy="COLLECT" aggregation="SUM">
+        <input id="_dt_ch_c">
+          <inputExpression typeRef="string"><text>channel</text></inputExpression>
+        </input>
+        <input id="_dt_ch_p">
+          <inputExpression typeRef="boolean"><text>cardPresent</text></inputExpression>
+        </input>
+        <input id="_dt_ch_h">
+          <inputExpression typeRef="number"><text>hourOfDay</text></inputExpression>
+        </input>
+        <output id="_dt_ch_out" typeRef="number"/>
+
+        <rule id="_rch_cnp">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>false</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>10</text></outputEntry>
+        </rule>
+        <rule id="_rch_wire">
+          <inputEntry><text>"WIRE","CRYPTO_OFFRAMP"</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <outputEntry><text>15</text></outputEntry>
+        </rule>
+        <rule id="_rch_night">
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>-</text></inputEntry>
+          <inputEntry><text>[0..5]</text></inputEntry>
+          <outputEntry><text>8</text></outputEntry>
+        </rule>
+      </decisionTable>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <!-- ============================ decisions ============================ -->
+
+  <decision name="Screening Outcome" id="_d_screening">
+    <variable name="Screening Outcome"/>
+    <informationRequirement id="_ir_s1"><requiredInput href="#_i_cust"/></informationRequirement>
+    <decisionTable id="_dt_screen" hitPolicy="FIRST" preferredOrientation="Rule-as-Row">
+      <input id="_dt_s_scr">
+        <inputExpression typeRef="string"><text>Customer.sanctionsScreening</text></inputExpression>
+      </input>
+      <input id="_dt_s_pep">
+        <inputExpression typeRef="boolean"><text>Customer.isPEP</text></inputExpression>
+      </input>
+
+      <output id="_dt_s_status" name="status" typeRef="string">
+        <defaultOutputEntry><text>"PASS"</text></defaultOutputEntry>
+      </output>
+      <output id="_dt_s_reason" name="reasonCode" typeRef="string">
+        <defaultOutputEntry><text>"NONE"</text></defaultOutputEntry>
+      </output>
+
+      <rule id="_rs_confirmed">
+        <inputEntry><text>"CONFIRMED_MATCH"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"BLOCK"</text></outputEntry>
+        <outputEntry><text>"SANCTIONS_CONFIRMED"</text></outputEntry>
+      </rule>
+      <rule id="_rs_possible">
+        <inputEntry><text>"POSSIBLE_MATCH"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"HOLD"</text></outputEntry>
+        <outputEntry><text>"SANCTIONS_POSSIBLE"</text></outputEntry>
+      </rule>
+      <rule id="_rs_pep">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>true</text></inputEntry>
+        <outputEntry><text>"ENHANCED_DUE_DILIGENCE"</text></outputEntry>
+        <outputEntry><text>"PEP"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Risk Factors" id="_d_factors">
+    <variable name="Risk Factors"/>
+    <informationRequirement id="_ir_f1"><requiredInput href="#_i_tx"/></informationRequirement>
+    <informationRequirement id="_ir_f2"><requiredInput href="#_i_cust"/></informationRequirement>
+    <informationRequirement id="_ir_f3"><requiredInput href="#_i_behav"/></informationRequirement>
+    <informationRequirement id="_ir_f4"><requiredInput href="#_i_hrc"/></informationRequirement>
+    <knowledgeRequirement id="_kr_1"><requiredKnowledge href="#_bkm_amount"/></knowledgeRequirement>
+    <knowledgeRequirement id="_kr_2"><requiredKnowledge href="#_bkm_velocity"/></knowledgeRequirement>
+    <knowledgeRequirement id="_kr_3"><requiredKnowledge href="#_bkm_geo"/></knowledgeRequirement>
+    <knowledgeRequirement id="_kr_4"><requiredKnowledge href="#_bkm_profile"/></knowledgeRequirement>
+    <knowledgeRequirement id="_kr_5"><requiredKnowledge href="#_bkm_channel"/></knowledgeRequirement>
+    <context id="_ctx_factors">
+      <contextEntry>
+        <variable name="amount" typeRef="number"/>
+        <literalExpression>
+          <text>Amount Score(Transaction.amount, Behaviour.averageTicket90d)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="velocity" typeRef="number"/>
+        <literalExpression>
+          <text>Velocity Score(Behaviour.txCount24h, Behaviour.txAmount24h)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="geography" typeRef="number"/>
+        <literalExpression>
+          <text>Geography Score(Transaction.counterpartyCountry, Customer.homeCountry,
+Behaviour.distinctCountries7d, High Risk Countries)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="profile" typeRef="number"/>
+        <literalExpression>
+          <text>Profile Score(Customer.accountAgeDays, Customer.riskRating,
+Behaviour.priorConfirmedFraud)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="channel" typeRef="number"/>
+        <literalExpression>
+          <text>Channel Score(Transaction.channel, Transaction.cardPresent,
+Transaction.timestamp.hour)</text>
+        </literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+  <decision name="Risk Score" id="_d_score">
+    <variable name="Risk Score" typeRef="number"/>
+    <informationRequirement id="_ir_sc"><requiredDecision href="#_d_factors"/></informationRequirement>
+    <literalExpression id="_le_score">
+      <!-- Floored at zero: a negative total would read as a credit, not a risk. -->
+      <text>max(Risk Factors.amount + Risk Factors.velocity + Risk Factors.geography
++ Risk Factors.profile + Risk Factors.channel, 0)</text>
+    </literalExpression>
+  </decision>
+
+  <decision name="Risk Band" id="_d_band">
+    <variable name="Risk Band" typeRef="string"/>
+    <informationRequirement id="_ir_b"><requiredDecision href="#_d_score"/></informationRequirement>
+    <decisionTable id="_dt_band" hitPolicy="PRIORITY" preferredOrientation="Rule-as-Row">
+      <input id="_dt_b_score">
+        <inputExpression typeRef="number"><text>Risk Score</text></inputExpression>
+      </input>
+      <output id="_dt_b_out" typeRef="string">
+        <outputValues><text>"CRITICAL","HIGH","MEDIUM","LOW"</text></outputValues>
+        <defaultOutputEntry><text>"LOW"</text></defaultOutputEntry>
+      </output>
+
+      <rule id="_rb_medium">
+        <inputEntry><text>&gt;= 25</text></inputEntry>
+        <outputEntry><text>"MEDIUM"</text></outputEntry>
+      </rule>
+      <rule id="_rb_high">
+        <inputEntry><text>&gt;= 50</text></inputEntry>
+        <outputEntry><text>"HIGH"</text></outputEntry>
+      </rule>
+      <rule id="_rb_critical">
+        <inputEntry><text>&gt;= 80</text></inputEntry>
+        <outputEntry><text>"CRITICAL"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Case Disposition" id="_d_disposition">
+    <variable name="Case Disposition"/>
+    <informationRequirement id="_ir_d1"><requiredDecision href="#_d_screening"/></informationRequirement>
+    <informationRequirement id="_ir_d2"><requiredDecision href="#_d_band"/></informationRequirement>
+    <informationRequirement id="_ir_d3"><requiredDecision href="#_d_score"/></informationRequirement>
+    <decisionTable id="_dt_disp" hitPolicy="FIRST" preferredOrientation="Rule-as-Row">
+      <input id="_dt_dp_screen">
+        <inputExpression typeRef="string"><text>Screening Outcome.status</text></inputExpression>
+      </input>
+      <input id="_dt_dp_band">
+        <inputExpression typeRef="string"><text>Risk Band</text></inputExpression>
+      </input>
+
+      <output id="_dt_dp_action" name="action" typeRef="string"/>
+      <output id="_dt_dp_queue" name="queue" typeRef="string"/>
+      <output id="_dt_dp_sla" name="slaHours" typeRef="number"/>
+      <output id="_dt_dp_reason" name="reasonCode" typeRef="string"/>
+
+      <!-- Screening first, and unconditionally: no score can override it. -->
+      <rule id="_rd_block">
+        <inputEntry><text>"BLOCK"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"BLOCK"</text></outputEntry>
+        <outputEntry><text>"SANCTIONS"</text></outputEntry>
+        <outputEntry><text>0</text></outputEntry>
+        <outputEntry><text>"SANCTIONS_CONFIRMED"</text></outputEntry>
+      </rule>
+      <rule id="_rd_hold">
+        <inputEntry><text>"HOLD"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"HOLD"</text></outputEntry>
+        <outputEntry><text>"SANCTIONS"</text></outputEntry>
+        <outputEntry><text>1</text></outputEntry>
+        <outputEntry><text>"SANCTIONS_POSSIBLE"</text></outputEntry>
+      </rule>
+      <rule id="_rd_critical">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"CRITICAL"</text></inputEntry>
+        <outputEntry><text>"BLOCK"</text></outputEntry>
+        <outputEntry><text>"FRAUD_L2"</text></outputEntry>
+        <outputEntry><text>2</text></outputEntry>
+        <outputEntry><text>"RISK_CRITICAL"</text></outputEntry>
+      </rule>
+      <rule id="_rd_edd_high">
+        <inputEntry><text>"ENHANCED_DUE_DILIGENCE"</text></inputEntry>
+        <inputEntry><text>"HIGH","MEDIUM"</text></inputEntry>
+        <outputEntry><text>"REVIEW"</text></outputEntry>
+        <outputEntry><text>"COMPLIANCE_EDD"</text></outputEntry>
+        <outputEntry><text>4</text></outputEntry>
+        <outputEntry><text>"PEP_ELEVATED_RISK"</text></outputEntry>
+      </rule>
+      <rule id="_rd_high">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"HIGH"</text></inputEntry>
+        <outputEntry><text>"REVIEW"</text></outputEntry>
+        <outputEntry><text>"FRAUD_L1"</text></outputEntry>
+        <outputEntry><text>8</text></outputEntry>
+        <outputEntry><text>"RISK_HIGH"</text></outputEntry>
+      </rule>
+      <rule id="_rd_medium">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"MEDIUM"</text></inputEntry>
+        <outputEntry><text>"STEP_UP_AUTH"</text></outputEntry>
+        <outputEntry><text>"AUTOMATED"</text></outputEntry>
+        <outputEntry><text>24</text></outputEntry>
+        <outputEntry><text>"RISK_MEDIUM"</text></outputEntry>
+      </rule>
+      <rule id="_rd_edd_low">
+        <inputEntry><text>"ENHANCED_DUE_DILIGENCE"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"REVIEW"</text></outputEntry>
+        <outputEntry><text>"COMPLIANCE_EDD"</text></outputEntry>
+        <outputEntry><text>24</text></outputEntry>
+        <outputEntry><text>"PEP"</text></outputEntry>
+      </rule>
+      <rule id="_rd_allow">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"ALLOW"</text></outputEntry>
+        <outputEntry><text>"NONE"</text></outputEntry>
+        <outputEntry><text>0</text></outputEntry>
+        <outputEntry><text>"RISK_LOW"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <!--
+    The service is the deployable unit: a payment gateway calls this and gets a
+    disposition, without being able to reach the intermediate decisions.
+  -->
+  <decisionService name="Fraud Triage" id="_ds_triage">
+    <variable name="Fraud Triage"/>
+    <outputDecision href="#_d_disposition"/>
+    <encapsulatedDecision href="#_d_screening"/>
+    <encapsulatedDecision href="#_d_factors"/>
+    <encapsulatedDecision href="#_d_score"/>
+    <encapsulatedDecision href="#_d_band"/>
+    <inputData href="#_i_tx"/>
+    <inputData href="#_i_cust"/>
+    <inputData href="#_i_behav"/>
+    <inputData href="#_i_hrc"/>
+  </decisionService>
+
+</definitions>

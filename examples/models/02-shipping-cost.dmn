@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Simple. A single decision table with UNIQUE hit policy.
+
+  Shows the shape most business rules actually take: numeric ranges down one
+  axis, an enumeration down the other, and non-overlapping rules so that
+  exactly one applies. UNIQUE is the right policy precisely because an overlap
+  would be a modelling error, and the engine reports it as one.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_02_shipping"
+             name="Shipping Cost"
+             namespace="https://smarthorizon.example/dmn/shipping"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tDestination" id="_t_destination">
+    <typeRef>string</typeRef>
+    <allowedValues>
+      <text>"Domestic","EU","International"</text>
+    </allowedValues>
+  </itemDefinition>
+
+  <itemDefinition name="tParcel" id="_t_parcel">
+    <itemComponent name="weightKg" id="_t_parcel_w">
+      <typeRef>number</typeRef>
+    </itemComponent>
+    <itemComponent name="destination" id="_t_parcel_d">
+      <typeRef>tDestination</typeRef>
+    </itemComponent>
+  </itemDefinition>
+
+  <inputData name="Parcel" id="_i_parcel">
+    <variable name="Parcel" typeRef="tParcel"/>
+  </inputData>
+
+  <decision name="Shipping Cost" id="_d_cost">
+    <variable name="Shipping Cost" typeRef="number"/>
+    <informationRequirement id="_ir_1">
+      <requiredInput href="#_i_parcel"/>
+    </informationRequirement>
+    <decisionTable id="_dt_cost" hitPolicy="UNIQUE" preferredOrientation="Rule-as-Row">
+      <input id="_dt_in_w">
+        <inputExpression typeRef="number">
+          <text>Parcel.weightKg</text>
+        </inputExpression>
+      </input>
+      <input id="_dt_in_d">
+        <inputExpression typeRef="string">
+          <text>Parcel.destination</text>
+        </inputExpression>
+      </input>
+      <output id="_dt_out" typeRef="number"/>
+
+      <rule id="_r1">
+        <inputEntry><text>[0..2)</text></inputEntry>
+        <inputEntry><text>"Domestic"</text></inputEntry>
+        <outputEntry><text>4.95</text></outputEntry>
+      </rule>
+      <rule id="_r2">
+        <inputEntry><text>[2..10)</text></inputEntry>
+        <inputEntry><text>"Domestic"</text></inputEntry>
+        <outputEntry><text>7.50</text></outputEntry>
+      </rule>
+      <rule id="_r3">
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <inputEntry><text>"Domestic"</text></inputEntry>
+        <outputEntry><text>12.00</text></outputEntry>
+      </rule>
+      <rule id="_r4">
+        <inputEntry><text>[0..2)</text></inputEntry>
+        <inputEntry><text>"EU"</text></inputEntry>
+        <outputEntry><text>9.95</text></outputEntry>
+      </rule>
+      <rule id="_r5">
+        <inputEntry><text>[2..10)</text></inputEntry>
+        <inputEntry><text>"EU"</text></inputEntry>
+        <outputEntry><text>16.50</text></outputEntry>
+      </rule>
+      <rule id="_r6">
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <inputEntry><text>"EU"</text></inputEntry>
+        <outputEntry><text>28.00</text></outputEntry>
+      </rule>
+      <rule id="_r7">
+        <inputEntry><text>[0..2)</text></inputEntry>
+        <inputEntry><text>"International"</text></inputEntry>
+        <outputEntry><text>18.95</text></outputEntry>
+      </rule>
+      <rule id="_r8">
+        <inputEntry><text>[2..10)</text></inputEntry>
+        <inputEntry><text>"International"</text></inputEntry>
+        <outputEntry><text>34.50</text></outputEntry>
+      </rule>
+      <rule id="_r9">
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <inputEntry><text>"International"</text></inputEntry>
+        <outputEntry><text>62.00</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+</definitions>

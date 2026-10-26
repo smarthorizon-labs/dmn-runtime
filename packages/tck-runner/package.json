@@ -1,0 +1,20 @@
+{
+  "name": "@smarthorizon-labs/dmn-tck-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Executes the DMN TCK against the runtime and maintains the expected-failure baseline",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@smarthorizon-labs/dmn-feel": "0.1.0",
+    "@smarthorizon-labs/dmn-model": "0.1.0",
+    "@smarthorizon-labs/dmn-runtime": "0.1.0",
+    "@smarthorizon-labs/dmn-xml": "0.1.0"
+  }
+}

@@ -1,0 +1,4 @@
+# LF everywhere, on every platform. `npm run tck:report:check` compares the
+# committed report byte for byte with freshly generated output, so a CRLF
+# checkout — the Git for Windows default — would fail it for no real reason.
+* text=auto eol=lf

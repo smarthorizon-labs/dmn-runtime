@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Complex. Trade compliance: duty, controls and clearance routing.
+
+  The capstone. It combines most of what the other examples show one at a time:
+
+  - RULE ORDER, which collects every applicable control **in the order the
+    rules are written** — the one hit policy where rule order is part of the
+    answer rather than an artefact of it, because a control list is read in
+    order of authority.
+  - COLLECT SUM for the duty components, so the total decomposes back into the
+    measures that produced it.
+  - Nested contexts building a structured clearance instruction.
+  - Temporal comparison against a licence expiry date, supplied as input.
+  - String built-ins over the commodity code, so the tariff chapter is derived
+    rather than duplicated as a separate input.
+
+  Read together with the trace, this is a worked example of an auditable
+  decision: every number in the result traces back to a named rule.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_10_customs"
+             name="Customs Clearance"
+             namespace="https://smarthorizon.example/dmn/customs"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tConsignment" id="_t_con">
+    <itemComponent name="commodityCode" id="_t_c_cc"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="customsValue" id="_t_c_v"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="netMassKg" id="_t_c_m"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="originCountry" id="_t_c_o"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="isDualUse" id="_t_c_du"><typeRef>boolean</typeRef></itemComponent>
+    <itemComponent name="isPerishable" id="_t_c_p"><typeRef>boolean</typeRef></itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tLicence" id="_t_lic">
+    <itemComponent name="reference" id="_t_l_r"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="expiryDate" id="_t_l_e"><typeRef>date</typeRef></itemComponent>
+  </itemDefinition>
+
+  <inputData name="Consignment" id="_i_con">
+    <variable name="Consignment" typeRef="tConsignment"/>
+  </inputData>
+
+  <inputData name="Export Licence" id="_i_lic">
+    <variable name="Export Licence" typeRef="tLicence"/>
+  </inputData>
+
+  <inputData name="Declaration Date" id="_i_date">
+    <variable name="Declaration Date" typeRef="date"/>
+  </inputData>
+
+  <inputData name="Preference Countries" id="_i_pref">
+    <variable name="Preference Countries"/>
+  </inputData>
+
+  <businessKnowledgeModel name="Tariff Chapter" id="_bkm_chapter">
+    <variable name="Tariff Chapter" typeRef="string"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="code" typeRef="string"/>
+      <literalExpression>
+        <!-- The chapter is the first two digits of the commodity code. -->
+        <text>substring(code, 1, 2)</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel name="Ad Valorem Duty" id="_bkm_duty">
+    <variable name="Ad Valorem Duty" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="chapter" typeRef="string"/>
+      <formalParameter name="value" typeRef="number"/>
+      <formalParameter name="preferential" typeRef="boolean"/>
+      <literalExpression>
+        <text>decimal(value *
+  (if preferential then 0
+   else if chapter = "22" then 0.32
+   else if chapter = "61" then 0.12
+   else if chapter = "84" then 0.027
+   else 0.045), 2)</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision name="Classification" id="_d_class">
+    <variable name="Classification"/>
+    <informationRequirement id="_ir_1"><requiredInput href="#_i_con"/></informationRequirement>
+    <informationRequirement id="_ir_2"><requiredInput href="#_i_pref"/></informationRequirement>
+    <knowledgeRequirement id="_kr_1"><requiredKnowledge href="#_bkm_chapter"/></knowledgeRequirement>
+    <context id="_ctx_class">
+      <contextEntry>
+        <variable name="chapter" typeRef="string"/>
+        <literalExpression><text>Tariff Chapter(Consignment.commodityCode)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="preferential" typeRef="boolean"/>
+        <literalExpression>
+          <text>list contains(Preference Countries, Consignment.originCountry)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="excise" typeRef="boolean"/>
+        <literalExpression><text>chapter in ("22", "24")</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+  <decision name="Licence Status" id="_d_licence">
+    <variable name="Licence Status" typeRef="string"/>
+    <informationRequirement id="_ir_3"><requiredInput href="#_i_con"/></informationRequirement>
+    <informationRequirement id="_ir_4"><requiredInput href="#_i_lic"/></informationRequirement>
+    <informationRequirement id="_ir_5"><requiredInput href="#_i_date"/></informationRequirement>
+    <literalExpression id="_le_licence">
+      <text>if not(Consignment.isDualUse) then "NOT_REQUIRED"
+else if Export Licence = null then "MISSING"
+else if Export Licence.expiryDate &lt; Declaration Date then "EXPIRED"
+else "VALID"</text>
+    </literalExpression>
+  </decision>
+
+  <decision name="Duty Components" id="_d_duty">
+    <variable name="Duty Components" typeRef="number"/>
+    <informationRequirement id="_ir_6"><requiredInput href="#_i_con"/></informationRequirement>
+    <informationRequirement id="_ir_7"><requiredDecision href="#_d_class"/></informationRequirement>
+    <knowledgeRequirement id="_kr_2"><requiredKnowledge href="#_bkm_duty"/></knowledgeRequirement>
+    <decisionTable id="_dt_duty" hitPolicy="COLLECT" aggregation="SUM"
+                   preferredOrientation="Rule-as-Row">
+      <input id="_dt_du_excise">
+        <inputExpression typeRef="boolean"><text>Classification.excise</text></inputExpression>
+      </input>
+      <input id="_dt_du_chapter">
+        <inputExpression typeRef="string"><text>Classification.chapter</text></inputExpression>
+      </input>
+      <input id="_dt_du_value">
+        <inputExpression typeRef="number"><text>Consignment.customsValue</text></inputExpression>
+      </input>
+      <output id="_dt_du_out" typeRef="number"/>
+
+      <rule id="_rdu_advalorem">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry>
+          <text>Ad Valorem Duty(Classification.chapter, Consignment.customsValue,
+Classification.preferential)</text>
+        </outputEntry>
+      </rule>
+      <rule id="_rdu_excise">
+        <inputEntry><text>true</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>decimal(Consignment.netMassKg * 1.85, 2)</text></outputEntry>
+      </rule>
+      <rule id="_rdu_high_value">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt;= 100000</text></inputEntry>
+        <outputEntry><text>250</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Controls" id="_d_controls">
+    <variable name="Controls"/>
+    <informationRequirement id="_ir_8"><requiredInput href="#_i_con"/></informationRequirement>
+    <informationRequirement id="_ir_9"><requiredDecision href="#_d_licence"/></informationRequirement>
+    <informationRequirement id="_ir_10"><requiredDecision href="#_d_class"/></informationRequirement>
+    <decisionTable id="_dt_ctrl" hitPolicy="RULE ORDER" preferredOrientation="Rule-as-Row">
+      <input id="_dt_ct_lic">
+        <inputExpression typeRef="string"><text>Licence Status</text></inputExpression>
+      </input>
+      <input id="_dt_ct_excise">
+        <inputExpression typeRef="boolean"><text>Classification.excise</text></inputExpression>
+      </input>
+      <input id="_dt_ct_perish">
+        <inputExpression typeRef="boolean"><text>Consignment.isPerishable</text></inputExpression>
+      </input>
+      <output id="_dt_ct_out" typeRef="string"/>
+
+      <!-- Order is meaningful: an inspector reads these top down. -->
+      <rule id="_rct_licence">
+        <inputEntry><text>"MISSING","EXPIRED"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"EXPORT_LICENCE_CONTROL"</text></outputEntry>
+      </rule>
+      <rule id="_rct_excise">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>true</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"EXCISE_MOVEMENT_CONTROL"</text></outputEntry>
+      </rule>
+      <rule id="_rct_health">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>true</text></inputEntry>
+        <outputEntry><text>"SANITARY_INSPECTION"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Clearance Instruction" id="_d_clearance">
+    <variable name="Clearance Instruction"/>
+    <informationRequirement id="_ir_11"><requiredDecision href="#_d_controls"/></informationRequirement>
+    <informationRequirement id="_ir_12"><requiredDecision href="#_d_duty"/></informationRequirement>
+    <informationRequirement id="_ir_13"><requiredDecision href="#_d_licence"/></informationRequirement>
+    <informationRequirement id="_ir_14"><requiredDecision href="#_d_class"/></informationRequirement>
+    <context id="_ctx_clear">
+      <contextEntry>
+        <variable name="route" typeRef="string"/>
+        <literalExpression>
+          <text>if Licence Status in ("MISSING", "EXPIRED") then "RED"
+else if count(Controls) &gt; 0 then "ORANGE"
+else "GREEN"</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="dutyPayable" typeRef="number"/>
+        <literalExpression><text>Duty Components</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="controlCount" typeRef="number"/>
+        <literalExpression><text>count(Controls)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="preferentialOrigin" typeRef="boolean"/>
+        <literalExpression><text>Classification.preferential</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+  <decisionService name="Clearance" id="_ds_clearance">
+    <variable name="Clearance"/>
+    <outputDecision href="#_d_clearance"/>
+    <outputDecision href="#_d_controls"/>
+    <encapsulatedDecision href="#_d_class"/>
+    <encapsulatedDecision href="#_d_licence"/>
+    <encapsulatedDecision href="#_d_duty"/>
+    <inputData href="#_i_con"/>
+    <inputData href="#_i_lic"/>
+    <inputData href="#_i_date"/>
+    <inputData href="#_i_pref"/>
+  </decisionService>
+
+</definitions>

@@ -1,0 +1,202 @@
+# Publishes the five packages to npm through a trusted publisher, so no
+# long-lived npm token lives in this repository.
+#
+# npm mints a short-lived credential from this workflow's OIDC identity,
+# bound to the repository, to this file's name AND to the `npm`
+# environment. Renaming the file or the environment breaks publishing until
+# every package's trusted-publisher settings are updated. It fails closed,
+# which is the behaviour we want.
+#
+# Setup, once per package, at npmjs.com -> package -> Settings -> Trusted
+# publishing:
+#   repository:  smarthorizon-labs/dmn-runtime
+#   workflow:    publish.yml
+#   environment: npm
+#
+# Provenance is attested for every publish, tying each tarball to a public
+# commit and workflow run. A stored token could publish as us indefinitely;
+# the OIDC credential cannot outlive the job.
+#
+# Three ways in:
+#   release published   the normal path. OIDC, no secret involved.
+#   dispatch: dry-run   packs every package and lists its contents.
+#   dispatch: bootstrap the first publish only, before a trusted publisher
+#                       can exist (npm offers the setting only on a package
+#                       that already exists). Authenticates with the
+#                       NPM_BOOTSTRAP_TOKEN secret, which is deleted and
+#                       revoked immediately afterwards.
+
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run packs and lists; bootstrap is the one-time first publish'
+        type: choice
+        options: [dry-run, bootstrap]
+        default: dry-run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # A release is the last point at which a mistake is still cheap to
+      # stop, so the full gate runs again rather than trusting CI on the
+      # commit.
+      - name: Check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify entry points, license files and lockstep versions
+        run: node scripts/verify-packaging.mjs
+
+      - name: Fetch the DMN TCK
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/dmn-tck/tck.git vendor/tck
+          cd vendor/tck
+          git sparse-checkout set --no-cone '/TestCases/**/*.dmn' '/TestCases/**/*.xml'
+
+      - name: Run the TCK against the baseline
+        run: npm run tck
+
+      - name: The published TCK report matches the measurement
+        run: npm run tck:report:check
+
+      # Publishing exactly the tagged commit is what makes the provenance
+      # statement mean something. A dry run may come from any ref.
+      - name: Tag matches the package version
+        if: github.event_name == 'release' || inputs.mode == 'bootstrap'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            tag="$RELEASE_TAG"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            echo "A bootstrap publish must be dispatched from a version tag, not from $GITHUB_REF_NAME." >&2
+            exit 1
+          fi
+          declared="v$(node -p "require('./packages/dmn/package.json').version")"
+          if [ "$tag" != "$declared" ]; then
+            echo "Tag $tag does not match package version $declared." >&2
+            exit 1
+          fi
+
+  publish:
+    name: Publish
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write   # mints the OIDC credential npm exchanges, and signs provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      # The runner's bundled npm (10.x on Node 22) predates trusted
+      # publishing, which needs 11.5.1 or later. Without this the publish
+      # step fails in a way that looks like an authentication problem.
+      #
+      # Release path only. The bootstrap authenticates with a token and
+      # attests with --provenance, which the bundled npm has done since 9.5;
+      # keeping it off npm 11 means it never depends on how the newer CLI
+      # falls back from a failed OIDC exchange to a token.
+      - name: Upgrade npm for trusted publishing
+        if: github.event_name == 'release'
+        run: npm install -g npm@latest
+      - run: npm --version
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Dry run — pack and list contents
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'
+        run: |
+          for pkg in model xml feel-adapter runtime dmn; do
+            echo "=== packages/$pkg"
+            (cd "packages/$pkg" && npm pack --dry-run)
+          done
+
+      # Dependency order: npm does not check that a dependency exists at
+      # publish time, so publishing the facade first would briefly point it
+      # at versions the registry does not have.
+      #
+      # A version that is already on the registry is skipped rather than
+      # failed, so a release interrupted halfway can simply be re-run. A
+      # version number can never be published twice, so there is nothing
+      # to overwrite by accident.
+      - name: Bootstrap publish (one time, token)
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_BOOTSTRAP_TOKEN is not set on the npm environment." >&2
+            exit 1
+          fi
+          for pkg in model xml feel-adapter runtime dmn; do
+            cd "packages/$pkg"
+            name="$(node -p "require('./package.json').name")"
+            version="$(node -p "require('./package.json').version")"
+            spec="$name@$version"
+            # Compare the output, not the exit code: npm has changed what
+            # `npm view` returns for a missing version before, and a false
+            # "already published" here would silently publish nothing.
+            if [ "$(npm view "$spec" version 2>/dev/null)" = "$version" ]; then
+              echo "skip  $spec — already published"
+            else
+              npm publish --provenance --access public
+            fi
+            cd - >/dev/null
+          done
+
+      # No NODE_AUTH_TOKEN: authentication is the OIDC exchange, and
+      # provenance is generated automatically for a trusted publisher.
+      - name: Publish (trusted publisher)
+        if: github.event_name == 'release'
+        run: |
+          for pkg in model xml feel-adapter runtime dmn; do
+            cd "packages/$pkg"
+            name="$(node -p "require('./package.json').name")"
+            version="$(node -p "require('./package.json').version")"
+            spec="$name@$version"
+            # Compare the output, not the exit code: npm has changed what
+            # `npm view` returns for a missing version before, and a false
+            # "already published" here would silently publish nothing.
+            if [ "$(npm view "$spec" version 2>/dev/null)" = "$version" ]; then
+              echo "skip  $spec — already published"
+            else
+              npm publish
+            fi
+            cd - >/dev/null
+          done

@@ -1,0 +1,61 @@
+{
+  "name": "@smarthorizon-labs/dmn-runtime",
+  "version": "0.1.0",
+  "description": "DMN decision graph compilation and evaluation: decision tables, all seven hit policies, and an audit trace",
+  "keywords": [
+    "dmn",
+    "decision-table",
+    "decision-engine",
+    "business-rules",
+    "rules-engine",
+    "hit-policy",
+    "audit-trace",
+    "omg-dmn",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "author": "Smart Horizon Consulting",
+  "homepage": "https://github.com/smarthorizon-labs/dmn-runtime#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smarthorizon-labs/dmn-runtime.git",
+    "directory": "packages/runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/smarthorizon-labs/dmn-runtime/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@smarthorizon-labs/dmn-feel": "0.1.0",
+    "@smarthorizon-labs/dmn-model": "0.1.0"
+  }
+}

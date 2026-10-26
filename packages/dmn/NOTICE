@@ -1,0 +1,53 @@
+smarthorizon-labs/dmn-runtime
+Copyright 2026 Smart Horizon Consulting
+
+This product includes software developed at Smart Horizon Consulting.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+================================================================================
+Third-party components
+================================================================================
+
+This distribution depends on, but does not embed, the following MIT-licensed
+components. Their copyright notices are reproduced here as required by their
+licenses.
+
+--------------------------------------------------------------------------------
+lezer-feel — https://github.com/nikku/lezer-feel
+Copyright (c) Nico Rehwaldt
+Licensed under the MIT License.
+
+Used as the FEEL grammar. The grammar is reused; FEEL evaluation in this
+project is original work. See docs/adr/0001-numeric-semantics.md for why the
+evaluator is not reused from `feelin`.
+--------------------------------------------------------------------------------
+@lezer/common — https://github.com/lezer-parser/common
+Copyright (c) by Marijn Haverbeke and others
+Licensed under the MIT License.
+
+Syntax tree data structures used by the parser.
+--------------------------------------------------------------------------------
+decimal.js — https://github.com/MikeMcl/decimal.js
+Copyright (c) Michael Mclaughlin
+Licensed under the MIT License.
+
+Arbitrary-precision decimal arithmetic, configured to MathContext.DECIMAL128
+semantics.
+--------------------------------------------------------------------------------
+
+================================================================================
+Provenance
+================================================================================
+
+Every source file states whether it is original work or adapted from a
+third-party implementation.
+
+As of this revision, all files under packages/*/src are original work. No code
+has been adapted from `feelin` or from any other FEEL implementation. Test
+*expectations* recording the observed behaviour of reference engines (Drools,
+jDMN) are facts about those engines rather than copies of them.
+
+If a future change adapts third-party source, that file must carry the
+originating copyright notice and license, and this section must be updated in
+the same commit.

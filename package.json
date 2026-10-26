@@ -1,0 +1,43 @@
+{
+  "name": "@smarthorizon-labs/dmn-runtime-workspace",
+  "private": true,
+  "description": "Workspace root for the smarthorizon DMN runtime",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "//workspaces": "Listed in dependency order, not as a glob: npm runs workspace scripts in this order, and a glob sorts @smarthorizon-labs/dmn before the packages it re-exports, so a clean build would fail.",
+  "workspaces": [
+    "packages/model",
+    "packages/xml",
+    "packages/feel-adapter",
+    "packages/runtime",
+    "packages/dmn",
+    "packages/tck-runner"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run build && npm run typecheck --workspaces --if-present",
+    "verify:packaging": "npm run build && node scripts/verify-packaging.mjs",
+    "tck": "npm run build && tsx packages/tck-runner/src/cli.ts",
+    "tck:update": "npm run build && tsx packages/tck-runner/src/cli.ts --update",
+    "check": "npm run hygiene && npm run typecheck && npm run test",
+    "diff:export": "tsx packages/tck-runner/src/diff-cli.ts --export",
+    "diff:record": "node scripts/record-drools.mjs",
+    "diff": "tsx packages/tck-runner/src/diff-cli.ts",
+    "hygiene": "node scripts/check-source-hygiene.mjs",
+    "tck:report": "npm run build && tsx packages/tck-runner/src/report-cli.ts",
+    "tck:report:check": "npm run build && tsx packages/tck-runner/src/report-cli.ts --check",
+    "version:set": "node scripts/set-version.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.2",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,60 @@
+name: Bug report
+description: The engine produced a wrong result, or failed on a model it should handle
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: if the engine reported that it could not evaluate
+        something, check the [roadmap](../../#roadmap) and the
+        [TCK report](../../blob/main/docs/tck-report.md) first — it may be a
+        known gap rather than a defect, and those are tracked in the baseline
+        rather than as issues.
+
+  - type: textarea
+    id: model
+    attributes:
+      label: The DMN model
+      description: >
+        The smallest model that reproduces it. Please strip anything
+        confidential — replace real rules and data with equivalents that still
+        trigger the behaviour.
+      render: xml
+    validations:
+      required: true
+
+  - type: textarea
+    id: inputs
+    attributes:
+      label: The inputs
+      description: What you passed to `evaluateModel`.
+      render: ts
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what you got
+      description: >
+        If another DMN engine gives a different answer, say which and what it
+        returned — that is the most useful thing you can include, because this
+        project arbitrates ambiguity against a reference engine.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: '@smarthorizon-labs/dmn 0.1.0'
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: 'v22.15.1'
+    validations:
+      required: true

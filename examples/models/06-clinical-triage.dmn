@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Moderate. PRIORITY hit policy.
+
+  Several rules can match at once and the most severe must win regardless of
+  the order they are written in. That is what PRIORITY is for: the output
+  clause declares the severity order in outputValues, and the engine ranks
+  matches by it. Reordering the rules cannot change the outcome, which is
+  exactly the property a clinical table needs.
+
+  Contrast with 03, where FIRST makes rule order load-bearing.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_06_triage"
+             name="Clinical Triage"
+             namespace="https://smarthorizon.example/dmn/triage"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tVitals" id="_t_vitals">
+    <itemComponent name="systolic" id="_t_v_s"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="heartRate" id="_t_v_h"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="oxygenSaturation" id="_t_v_o"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="temperature" id="_t_v_t"><typeRef>number</typeRef></itemComponent>
+  </itemDefinition>
+
+  <inputData name="Vitals" id="_i_vitals">
+    <variable name="Vitals" typeRef="tVitals"/>
+  </inputData>
+
+  <inputData name="Presenting Complaint" id="_i_complaint">
+    <variable name="Presenting Complaint" typeRef="string"/>
+  </inputData>
+
+  <decision name="Triage Category" id="_d_triage">
+    <variable name="Triage Category" typeRef="string"/>
+    <informationRequirement id="_ir_1"><requiredInput href="#_i_vitals"/></informationRequirement>
+    <informationRequirement id="_ir_2"><requiredInput href="#_i_complaint"/></informationRequirement>
+    <decisionTable id="_dt_triage" hitPolicy="PRIORITY" preferredOrientation="Rule-as-Row">
+      <input id="_dt_t_o2">
+        <inputExpression typeRef="number"><text>Vitals.oxygenSaturation</text></inputExpression>
+      </input>
+      <input id="_dt_t_sys">
+        <inputExpression typeRef="number"><text>Vitals.systolic</text></inputExpression>
+      </input>
+      <input id="_dt_t_hr">
+        <inputExpression typeRef="number"><text>Vitals.heartRate</text></inputExpression>
+      </input>
+      <input id="_dt_t_comp">
+        <inputExpression typeRef="string"><text>Presenting Complaint</text></inputExpression>
+      </input>
+
+      <output id="_dt_t_out" typeRef="string">
+        <outputValues>
+          <text>"Immediate","Urgent","Standard","Non-urgent"</text>
+        </outputValues>
+        <!--
+          "Standard" is the default rather than a catch-all rule. A catch-all
+          would match alongside the minor-injury rule and, because it ranks
+          higher in outputValues, would win every time — so the Non-urgent
+          category could never be reached. The default applies only when
+          nothing matched, which is what was meant.
+        -->
+        <defaultOutputEntry>
+          <text>"Standard"</text>
+        </defaultOutputEntry>
+      </output>
+
+      <!-- Written from least to most severe on purpose: PRIORITY must not care. -->
+      <rule id="_rt_minor">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"Minor injury","Prescription request"</text></inputEntry>
+        <outputEntry><text>"Non-urgent"</text></outputEntry>
+      </rule>
+      <rule id="_rt_tachy">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt; 120</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Urgent"</text></outputEntry>
+      </rule>
+      <rule id="_rt_chest">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"Chest pain"</text></inputEntry>
+        <outputEntry><text>"Urgent"</text></outputEntry>
+      </rule>
+      <rule id="_rt_hypox">
+        <inputEntry><text>&lt; 92</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Immediate"</text></outputEntry>
+      </rule>
+      <rule id="_rt_shock">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&lt; 90</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Immediate"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Target Wait" id="_d_wait">
+    <variable name="Target Wait" typeRef="days and time duration"/>
+    <informationRequirement id="_ir_3"><requiredDecision href="#_d_triage"/></informationRequirement>
+    <literalExpression id="_le_wait">
+      <text>if Triage Category = "Immediate" then duration("PT0M")
+else if Triage Category = "Urgent" then duration("PT15M")
+else if Triage Category = "Standard" then duration("PT2H")
+else duration("PT4H")</text>
+    </literalExpression>
+  </decision>
+
+</definitions>

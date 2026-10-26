@@ -1,0 +1,38 @@
+name: Feature request
+description: Ask for a DMN or FEEL construct, or an API you need
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most gaps are already known and listed in the
+        [roadmap](../../#roadmap) and the
+        [TCK report](../../blob/main/docs/tck-report.md). A request against a
+        known gap is still worth filing — it tells us what to do first, which
+        is the part we cannot guess.
+
+  - type: textarea
+    id: need
+    attributes:
+      label: What you are trying to model
+      description: >
+        The decision logic, not the API call. Knowing the shape of the model
+        usually reveals whether something already supported would do the job.
+    validations:
+      required: true
+
+  - type: textarea
+    id: construct
+    attributes:
+      label: The construct or API you need
+      description: >
+        If it is a FEEL built-in or a boxed expression, name it. If the DMN
+        specification defines it, a section reference helps.
+    validations:
+      required: true
+
+  - type: input
+    id: blocking
+    attributes:
+      label: Is this blocking you, or a preference?
+      description: An honest answer helps prioritise. "Preference" is a fine answer.

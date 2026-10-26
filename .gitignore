@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+.vitest/
+
+# npm pack output
+*.tgz
+
+# Local tooling
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vendored TCK checkout (fetched, never committed)
+vendor/tck/
+
+# Java reference tool build output
+tools/drools-reference/target/
+
+# Regenerable input to the Drools reference run. The *results* are committed —
+# they need Docker and a JVM to reproduce — but the inputs are derived from the
+# TCK by `npm run diff:export` and would only add churn.
+packages/tck-runner/reference/differential-cases.json
+
+# maven-shade-plugin artifact
+tools/drools-reference/dependency-reduced-pom.xml

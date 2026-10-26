@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Complex. A decision service with an input decision.
+
+  This is the construct most often misunderstood, so the model is built to make
+  the difference visible.
+
+  "Bureau Score" is a decision *inside the model* with its own logic — a
+  fallback estimate from the applicant's own declarations. The service declares
+  it as an `inputDecision`, which makes it a **parameter**: when the service is
+  invoked, the caller supplies the real bureau score and the fallback logic is
+  never run.
+
+  Evaluate the whole model and you get the fallback. Invoke the service and you
+  get what the caller passed. Both are correct, and they are different
+  operations — which is exactly why a runtime may not implement one in terms of
+  the other.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_09_credit"
+             name="Credit Decisioning"
+             namespace="https://smarthorizon.example/dmn/credit"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tApplicant" id="_t_app">
+    <itemComponent name="annualIncome" id="_t_a_i"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="existingDebt" id="_t_a_d"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="employmentYears" id="_t_a_e"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="missedPayments" id="_t_a_m"><typeRef>number</typeRef></itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tRequest" id="_t_req">
+    <itemComponent name="amount" id="_t_r_a"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="termMonths" id="_t_r_t"><typeRef>number</typeRef></itemComponent>
+  </itemDefinition>
+
+  <inputData name="Applicant" id="_i_app">
+    <variable name="Applicant" typeRef="tApplicant"/>
+  </inputData>
+
+  <inputData name="Request" id="_i_req">
+    <variable name="Request" typeRef="tRequest"/>
+  </inputData>
+
+  <businessKnowledgeModel name="Debt To Income" id="_bkm_dti">
+    <variable name="Debt To Income" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="debt" typeRef="number"/>
+      <formalParameter name="income" typeRef="number"/>
+      <literalExpression>
+        <text>if income &gt; 0 then decimal(debt / income, 4) else null</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <!--
+    A fallback estimate. The service treats this as a parameter, so a caller
+    with a real bureau score never runs it.
+  -->
+  <decision name="Bureau Score" id="_d_bureau">
+    <variable name="Bureau Score" typeRef="number"/>
+    <informationRequirement id="_ir_1"><requiredInput href="#_i_app"/></informationRequirement>
+    <literalExpression id="_le_bureau">
+      <text>max(300, min(850, 650 + Applicant.employmentYears * 10 - Applicant.missedPayments * 45))</text>
+    </literalExpression>
+  </decision>
+
+  <decision name="Affordability" id="_d_afford">
+    <variable name="Affordability"/>
+    <informationRequirement id="_ir_2"><requiredInput href="#_i_app"/></informationRequirement>
+    <informationRequirement id="_ir_3"><requiredInput href="#_i_req"/></informationRequirement>
+    <knowledgeRequirement id="_kr_1"><requiredKnowledge href="#_bkm_dti"/></knowledgeRequirement>
+    <context id="_ctx_afford">
+      <contextEntry>
+        <variable name="monthlyIncome" typeRef="number"/>
+        <literalExpression><text>decimal(Applicant.annualIncome / 12, 2)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="instalment" typeRef="number"/>
+        <literalExpression>
+          <text>decimal(Request.amount / Request.termMonths, 2)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="dti" typeRef="number"/>
+        <literalExpression>
+          <text>Debt To Income(Applicant.existingDebt + instalment * 12, Applicant.annualIncome)</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="affordable" typeRef="boolean"/>
+        <literalExpression><text>dti &lt;= 0.40</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+  <decision name="Credit Decision" id="_d_decision">
+    <variable name="Credit Decision"/>
+    <informationRequirement id="_ir_4"><requiredDecision href="#_d_bureau"/></informationRequirement>
+    <informationRequirement id="_ir_5"><requiredDecision href="#_d_afford"/></informationRequirement>
+    <decisionTable id="_dt_credit" hitPolicy="FIRST" preferredOrientation="Rule-as-Row">
+      <input id="_dt_c_afford">
+        <inputExpression typeRef="boolean"><text>Affordability.affordable</text></inputExpression>
+      </input>
+      <input id="_dt_c_score">
+        <inputExpression typeRef="number"><text>Bureau Score</text></inputExpression>
+      </input>
+
+      <output id="_dt_c_out" name="outcome" typeRef="string"/>
+      <output id="_dt_c_rate" name="apr" typeRef="number"/>
+      <output id="_dt_c_reason" name="reason" typeRef="string"/>
+
+      <rule id="_rc_unaffordable">
+        <inputEntry><text>false</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"DECLINE"</text></outputEntry>
+        <outputEntry><text>null</text></outputEntry>
+        <outputEntry><text>"Debt to income above policy limit"</text></outputEntry>
+      </rule>
+      <rule id="_rc_subprime">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&lt; 580</text></inputEntry>
+        <outputEntry><text>"DECLINE"</text></outputEntry>
+        <outputEntry><text>null</text></outputEntry>
+        <outputEntry><text>"Bureau score below floor"</text></outputEntry>
+      </rule>
+      <rule id="_rc_refer">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>[580..660)</text></inputEntry>
+        <outputEntry><text>"REFER"</text></outputEntry>
+        <outputEntry><text>0.199</text></outputEntry>
+        <outputEntry><text>"Manual underwriting required"</text></outputEntry>
+      </rule>
+      <rule id="_rc_standard">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>[660..740)</text></inputEntry>
+        <outputEntry><text>"APPROVE"</text></outputEntry>
+        <outputEntry><text>0.129</text></outputEntry>
+        <outputEntry><text>"Standard pricing"</text></outputEntry>
+      </rule>
+      <rule id="_rc_prime">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt;= 740</text></inputEntry>
+        <outputEntry><text>"APPROVE"</text></outputEntry>
+        <outputEntry><text>0.079</text></outputEntry>
+        <outputEntry><text>"Prime pricing"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decisionService name="Underwriting" id="_ds_underwriting">
+    <variable name="Underwriting"/>
+    <outputDecision href="#_d_decision"/>
+    <encapsulatedDecision href="#_d_afford"/>
+    <!-- The caller supplies this; the fallback logic above is not run. -->
+    <inputDecision href="#_d_bureau"/>
+    <inputData href="#_i_app"/>
+    <inputData href="#_i_req"/>
+  </decisionService>
+
+</definitions>

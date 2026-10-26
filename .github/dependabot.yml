@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # Runtime dependencies are what ships to users, so security updates matter
+  # more here than version currency. Grouped so that a routine bump is one
+  # review rather than five.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']

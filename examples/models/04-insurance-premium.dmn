@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Moderate. Business knowledge models invoked from a chain of decisions.
+
+  A BKM is reusable logic with parameters: the pricing formula lives in one
+  place and both the quote and the excess refer to it, rather than the formula
+  being copied into two decisions and drifting apart.
+
+  Note the decision graph: Risk Class feeds Annual Premium, which feeds
+  Policy Quote. The runtime evaluates them in dependency order without the
+  model saying anything about sequence.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_04_insurance"
+             name="Insurance Premium"
+             namespace="https://smarthorizon.example/dmn/insurance"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tDriver" id="_t_driver">
+    <itemComponent name="age" id="_t_driver_a"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="yearsLicensed" id="_t_driver_y"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="claimsLast5Years" id="_t_driver_c"><typeRef>number</typeRef></itemComponent>
+  </itemDefinition>
+
+  <itemDefinition name="tVehicle" id="_t_vehicle">
+    <itemComponent name="value" id="_t_vehicle_v"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="category" id="_t_vehicle_c"><typeRef>string</typeRef></itemComponent>
+  </itemDefinition>
+
+  <inputData name="Driver" id="_i_driver">
+    <variable name="Driver" typeRef="tDriver"/>
+  </inputData>
+
+  <inputData name="Vehicle" id="_i_vehicle">
+    <variable name="Vehicle" typeRef="tVehicle"/>
+  </inputData>
+
+  <businessKnowledgeModel name="Base Rate" id="_bkm_base">
+    <variable name="Base Rate" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="category" typeRef="string"/>
+      <literalExpression>
+        <text>if category = "Sports" then 0.085
+else if category = "SUV" then 0.055
+else if category = "Compact" then 0.032
+else 0.045</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <businessKnowledgeModel name="Loading" id="_bkm_loading">
+    <variable name="Loading" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="riskClass" typeRef="string"/>
+      <literalExpression>
+        <text>if riskClass = "High" then 1.75
+else if riskClass = "Elevated" then 1.30
+else if riskClass = "Standard" then 1.00
+else 0.85</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision name="Risk Class" id="_d_risk">
+    <variable name="Risk Class" typeRef="string"/>
+    <informationRequirement id="_ir_1">
+      <requiredInput href="#_i_driver"/>
+    </informationRequirement>
+    <decisionTable id="_dt_risk" hitPolicy="FIRST" preferredOrientation="Rule-as-Row">
+      <input id="_dt_r_age">
+        <inputExpression typeRef="number"><text>Driver.age</text></inputExpression>
+      </input>
+      <input id="_dt_r_exp">
+        <inputExpression typeRef="number"><text>Driver.yearsLicensed</text></inputExpression>
+      </input>
+      <input id="_dt_r_claims">
+        <inputExpression typeRef="number"><text>Driver.claimsLast5Years</text></inputExpression>
+      </input>
+      <output id="_dt_r_out" typeRef="string"/>
+
+      <rule id="_rr1">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt;= 3</text></inputEntry>
+        <outputEntry><text>"High"</text></outputEntry>
+      </rule>
+      <rule id="_rr2">
+        <inputEntry><text>&lt; 25</text></inputEntry>
+        <inputEntry><text>&lt; 3</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"High"</text></outputEntry>
+      </rule>
+      <rule id="_rr3">
+        <inputEntry><text>&lt; 25</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Elevated"</text></outputEntry>
+      </rule>
+      <rule id="_rr4">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>[1..3)</text></inputEntry>
+        <outputEntry><text>"Elevated"</text></outputEntry>
+      </rule>
+      <rule id="_rr5">
+        <inputEntry><text>&gt;= 30</text></inputEntry>
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <inputEntry><text>0</text></inputEntry>
+        <outputEntry><text>"Preferred"</text></outputEntry>
+      </rule>
+      <rule id="_rr6">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>"Standard"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Annual Premium" id="_d_premium">
+    <variable name="Annual Premium" typeRef="number"/>
+    <informationRequirement id="_ir_2">
+      <requiredInput href="#_i_vehicle"/>
+    </informationRequirement>
+    <informationRequirement id="_ir_3">
+      <requiredDecision href="#_d_risk"/>
+    </informationRequirement>
+    <knowledgeRequirement id="_kr_1">
+      <requiredKnowledge href="#_bkm_base"/>
+    </knowledgeRequirement>
+    <knowledgeRequirement id="_kr_2">
+      <requiredKnowledge href="#_bkm_loading"/>
+    </knowledgeRequirement>
+    <literalExpression id="_le_premium">
+      <text>decimal(Vehicle.value * Base Rate(Vehicle.category) * Loading(Risk Class), 2)</text>
+    </literalExpression>
+  </decision>
+
+  <decision name="Policy Quote" id="_d_quote">
+    <variable name="Policy Quote"/>
+    <informationRequirement id="_ir_4">
+      <requiredDecision href="#_d_premium"/>
+    </informationRequirement>
+    <informationRequirement id="_ir_5">
+      <requiredDecision href="#_d_risk"/>
+    </informationRequirement>
+    <context id="_ctx_quote">
+      <contextEntry>
+        <variable name="monthly" typeRef="number"/>
+        <literalExpression><text>decimal(Annual Premium / 12, 2)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="excess" typeRef="number"/>
+        <literalExpression>
+          <text>if Risk Class = "High" then 1000 else if Risk Class = "Elevated" then 500 else 250</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="annual" typeRef="number"/>
+        <literalExpression><text>Annual Premium</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+</definitions>

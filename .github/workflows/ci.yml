@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check (Node ${{ matrix.node }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ADR-0002 sets the floor at the oldest Node.js LTS line still receiving
+        # security fixes. Every supported line is exercised, on both a POSIX
+        # and a Windows runner. When a line reaches end of life, it leaves this
+        # list and the `engines` floor moves in the same change.
+        node: ['22', '24', '26']
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify dual ESM/CJS entry points and license files
+        # ADR-0002: dual packaging is easy to declare and easy to get subtly
+        # wrong, so both entry points are imported rather than trusted. The
+        # same script checks that LICENSE and NOTICE are actually present in
+        # each package, since `files` can list them and they can still be gone.
+        run: node scripts/verify-packaging.mjs
+
+  tck:
+    name: DMN TCK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch the DMN TCK
+        # Blobless + sparse: the full checkout is ~430 MB, mostly PDFs and
+        # images. Only the models and test files are needed.
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/dmn-tck/tck.git vendor/tck
+          cd vendor/tck
+          git sparse-checkout set --no-cone '/TestCases/**/*.dmn' '/TestCases/**/*.xml'
+
+      - name: Run the TCK against the baseline
+        # The baseline is asserted exactly. An unexpected pass
+        # fails the build too — it usually means a test was mis-classified.
+        run: npm run tck
+
+      - name: The published TCK report matches the measurement
+        # docs/tck-report.md is generated. Committing a stale one would mean
+        # publishing conformance numbers the suite no longer produces.
+        run: npm run tck:report:check
+
+      - name: Differential report against Drools
+        # Compares against committed Drools output, so no JVM is needed here.
+        # Reports rather than gates: disagreeing with another engine is
+        # evidence to review, not automatically a defect. The TCK baseline is
+        # what gates.
+        run: npm run diff
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Audit production dependencies
+        # Runtime dependencies are the ones shipped to
+        # users; dev-tooling advisories are tracked separately.
+        run: npm audit --omit=dev --audit-level=moderate

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Simple. FIRST hit policy, two outputs, and a default output entry.
+
+  Where 02 uses UNIQUE because overlap would be an error, this table is
+  deliberately ordered: the rules overlap and the first match wins. The default
+  output entry supplies the answer when nothing matches, which is what keeps
+  the decision total rather than leaving a null for the caller to interpret.
+
+  Two outputs mean the result is a context, not a scalar.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_03_vat"
+             name="VAT Classification"
+             namespace="https://smarthorizon.example/dmn/vat"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tLineItem" id="_t_line">
+    <itemComponent name="category" id="_t_line_c">
+      <typeRef>string</typeRef>
+    </itemComponent>
+    <itemComponent name="isExport" id="_t_line_e">
+      <typeRef>boolean</typeRef>
+    </itemComponent>
+    <itemComponent name="netAmount" id="_t_line_n">
+      <typeRef>number</typeRef>
+    </itemComponent>
+  </itemDefinition>
+
+  <inputData name="Line Item" id="_i_line">
+    <variable name="Line Item" typeRef="tLineItem"/>
+  </inputData>
+
+  <decision name="VAT Treatment" id="_d_treatment">
+    <variable name="VAT Treatment"/>
+    <informationRequirement id="_ir_1">
+      <requiredInput href="#_i_line"/>
+    </informationRequirement>
+    <decisionTable id="_dt_vat" hitPolicy="FIRST" preferredOrientation="Rule-as-Row">
+      <input id="_dt_in_export">
+        <inputExpression typeRef="boolean">
+          <text>Line Item.isExport</text>
+        </inputExpression>
+      </input>
+      <input id="_dt_in_cat">
+        <inputExpression typeRef="string">
+          <text>Line Item.category</text>
+        </inputExpression>
+      </input>
+
+      <output id="_dt_out_rate" name="rate" typeRef="number">
+        <defaultOutputEntry>
+          <text>0.20</text>
+        </defaultOutputEntry>
+      </output>
+      <output id="_dt_out_code" name="code" typeRef="string">
+        <defaultOutputEntry>
+          <text>"STANDARD"</text>
+        </defaultOutputEntry>
+      </output>
+
+      <rule id="_r_export">
+        <inputEntry><text>true</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>0.00</text></outputEntry>
+        <outputEntry><text>"ZERO_RATED_EXPORT"</text></outputEntry>
+      </rule>
+      <rule id="_r_food">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"Food","Children's clothing"</text></inputEntry>
+        <outputEntry><text>0.00</text></outputEntry>
+        <outputEntry><text>"ZERO_RATED"</text></outputEntry>
+      </rule>
+      <rule id="_r_energy">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"Domestic energy"</text></inputEntry>
+        <outputEntry><text>0.05</text></outputEntry>
+        <outputEntry><text>"REDUCED"</text></outputEntry>
+      </rule>
+      <rule id="_r_books">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"Books"</text></inputEntry>
+        <outputEntry><text>0.00</text></outputEntry>
+        <outputEntry><text>"ZERO_RATED"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="VAT Due" id="_d_due">
+    <variable name="VAT Due" typeRef="number"/>
+    <informationRequirement id="_ir_2">
+      <requiredInput href="#_i_line"/>
+    </informationRequirement>
+    <informationRequirement id="_ir_3">
+      <requiredDecision href="#_d_treatment"/>
+    </informationRequirement>
+    <literalExpression id="_le_due">
+      <text>decimal(Line Item.netAmount * VAT Treatment.rate, 2)</text>
+    </literalExpression>
+  </decision>
+
+</definitions>

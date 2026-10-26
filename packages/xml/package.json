@@ -1,0 +1,58 @@
+{
+  "name": "@smarthorizon-labs/dmn-xml",
+  "version": "0.1.0",
+  "description": "Secure, version-aware DMN XML loading for DMN 1.1 through 1.5",
+  "keywords": [
+    "dmn",
+    "dmn-xml",
+    "decision-model",
+    "xml-parser",
+    "omg-dmn",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "author": "Smart Horizon Consulting",
+  "homepage": "https://github.com/smarthorizon-labs/dmn-runtime#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smarthorizon-labs/dmn-runtime.git",
+    "directory": "packages/xml"
+  },
+  "bugs": {
+    "url": "https://github.com/smarthorizon-labs/dmn-runtime/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@smarthorizon-labs/dmn-model": "0.1.0",
+    "saxes": "^6.0.0"
+  }
+}

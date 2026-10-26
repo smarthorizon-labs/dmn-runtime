@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Moderate. Dates and durations.
+
+  Note what is *not* here: no call to today(). The evaluation date arrives as
+  an input, which is what makes the decision reproducible — re-running the same
+  case next year gives the same answer, and an audit of a past decision can be
+  replayed exactly. A model that reads the host clock cannot be replayed.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_05_leave"
+             name="Employee Leave"
+             namespace="https://smarthorizon.example/dmn/leave"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tEmployee" id="_t_emp">
+    <itemComponent name="hireDate" id="_t_emp_h"><typeRef>date</typeRef></itemComponent>
+    <itemComponent name="band" id="_t_emp_b"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="isPartTime" id="_t_emp_p"><typeRef>boolean</typeRef></itemComponent>
+  </itemDefinition>
+
+  <inputData name="Employee" id="_i_emp">
+    <variable name="Employee" typeRef="tEmployee"/>
+  </inputData>
+
+  <inputData name="As Of" id="_i_asof">
+    <variable name="As Of" typeRef="date"/>
+  </inputData>
+
+  <businessKnowledgeModel name="Completed Years" id="_bkm_years">
+    <variable name="Completed Years" typeRef="number"/>
+    <encapsulatedLogic kind="FEEL">
+      <formalParameter name="from" typeRef="date"/>
+      <formalParameter name="to" typeRef="date"/>
+      <literalExpression>
+        <text>years and months duration(from, to).years</text>
+      </literalExpression>
+    </encapsulatedLogic>
+  </businessKnowledgeModel>
+
+  <decision name="Service Years" id="_d_service">
+    <variable name="Service Years" typeRef="number"/>
+    <informationRequirement id="_ir_1"><requiredInput href="#_i_emp"/></informationRequirement>
+    <informationRequirement id="_ir_2"><requiredInput href="#_i_asof"/></informationRequirement>
+    <knowledgeRequirement id="_kr_1"><requiredKnowledge href="#_bkm_years"/></knowledgeRequirement>
+    <literalExpression id="_le_service">
+      <text>Completed Years(Employee.hireDate, As Of)</text>
+    </literalExpression>
+  </decision>
+
+  <decision name="Anniversary" id="_d_anniv">
+    <variable name="Anniversary" typeRef="date"/>
+    <informationRequirement id="_ir_3"><requiredInput href="#_i_emp"/></informationRequirement>
+    <informationRequirement id="_ir_4"><requiredInput href="#_i_asof"/></informationRequirement>
+    <literalExpression id="_le_anniv">
+      <text>date(As Of.year, Employee.hireDate.month, Employee.hireDate.day)</text>
+    </literalExpression>
+  </decision>
+
+  <decision name="Leave Days" id="_d_days">
+    <variable name="Leave Days" typeRef="number"/>
+    <informationRequirement id="_ir_5"><requiredInput href="#_i_emp"/></informationRequirement>
+    <informationRequirement id="_ir_6"><requiredDecision href="#_d_service"/></informationRequirement>
+    <decisionTable id="_dt_days" hitPolicy="UNIQUE" preferredOrientation="Rule-as-Row">
+      <input id="_dt_d_years">
+        <inputExpression typeRef="number"><text>Service Years</text></inputExpression>
+      </input>
+      <input id="_dt_d_band">
+        <inputExpression typeRef="string"><text>Employee.band</text></inputExpression>
+      </input>
+      <output id="_dt_d_out" typeRef="number"/>
+
+      <rule id="_rd1">
+        <inputEntry><text>[0..3)</text></inputEntry>
+        <inputEntry><text>"Standard"</text></inputEntry>
+        <outputEntry><text>25</text></outputEntry>
+      </rule>
+      <rule id="_rd2">
+        <inputEntry><text>[3..10)</text></inputEntry>
+        <inputEntry><text>"Standard"</text></inputEntry>
+        <outputEntry><text>28</text></outputEntry>
+      </rule>
+      <rule id="_rd3">
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <inputEntry><text>"Standard"</text></inputEntry>
+        <outputEntry><text>32</text></outputEntry>
+      </rule>
+      <rule id="_rd4">
+        <inputEntry><text>[0..3)</text></inputEntry>
+        <inputEntry><text>"Senior"</text></inputEntry>
+        <outputEntry><text>28</text></outputEntry>
+      </rule>
+      <rule id="_rd5">
+        <inputEntry><text>[3..10)</text></inputEntry>
+        <inputEntry><text>"Senior"</text></inputEntry>
+        <outputEntry><text>32</text></outputEntry>
+      </rule>
+      <rule id="_rd6">
+        <inputEntry><text>&gt;= 10</text></inputEntry>
+        <inputEntry><text>"Senior"</text></inputEntry>
+        <outputEntry><text>35</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Entitlement" id="_d_entitlement">
+    <variable name="Entitlement"/>
+    <informationRequirement id="_ir_7"><requiredInput href="#_i_emp"/></informationRequirement>
+    <informationRequirement id="_ir_8"><requiredDecision href="#_d_days"/></informationRequirement>
+    <informationRequirement id="_ir_9"><requiredDecision href="#_d_service"/></informationRequirement>
+    <context id="_ctx_ent">
+      <contextEntry>
+        <variable name="days" typeRef="number"/>
+        <literalExpression>
+          <text>if Employee.isPartTime then floor(Leave Days / 2) else Leave Days</text>
+        </literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="serviceYears" typeRef="number"/>
+        <literalExpression><text>Service Years</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="longService" typeRef="boolean"/>
+        <literalExpression><text>Service Years &gt;= 10</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+</definitions>

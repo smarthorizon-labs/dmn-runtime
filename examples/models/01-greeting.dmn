@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Introductory. One input, one decision, one literal expression.
+
+  The smallest model that does something: enough to check the wiring of
+  load -> compile -> evaluate before anything interesting happens.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             id="_01_greeting"
+             name="Greeting"
+             namespace="https://smarthorizon.example/dmn/greeting"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <inputData name="Full Name" id="_i_fullName">
+    <variable name="Full Name" typeRef="string"/>
+  </inputData>
+
+  <inputData name="Preferred Language" id="_i_language">
+    <variable name="Preferred Language" typeRef="string"/>
+  </inputData>
+
+  <decision name="Greeting" id="_d_greeting">
+    <variable name="Greeting" typeRef="string"/>
+    <informationRequirement id="_ir_1">
+      <requiredInput href="#_i_fullName"/>
+    </informationRequirement>
+    <informationRequirement id="_ir_2">
+      <requiredInput href="#_i_language"/>
+    </informationRequirement>
+    <literalExpression id="_le_greeting">
+      <text>if Preferred Language = "pt" then "Ola, " + Full Name + "!"
+else if Preferred Language = "es" then "Hola, " + Full Name + "!"
+else "Hello, " + Full Name + "!"</text>
+    </literalExpression>
+  </decision>
+
+</definitions>

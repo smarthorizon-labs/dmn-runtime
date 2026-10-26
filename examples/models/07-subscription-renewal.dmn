@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Moderate. COLLECT with SUM aggregation.
+
+  Where UNIQUE, FIRST and PRIORITY all pick one rule, COLLECT applies every
+  rule that matches and aggregates the results. That is the natural shape for
+  anything additive — credits, loadings, penalty points — because each rule
+  states one independent reason and the total is their sum.
+
+  A rule that does not apply simply does not match; there is no "add zero"
+  rule, and no ordering to maintain.
+-->
+<definitions xmlns="https://www.omg.org/spec/DMN/20230324/MODEL/"
+             id="_07_renewal"
+             name="Subscription Renewal"
+             namespace="https://smarthorizon.example/dmn/renewal"
+             exporter="hand-authored"
+             expressionLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/"
+             typeLanguage="https://www.omg.org/spec/DMN/20230324/FEEL/">
+
+  <itemDefinition name="tMonthlyUsage" id="_t_usage" isCollection="true">
+    <typeRef>number</typeRef>
+  </itemDefinition>
+
+  <itemDefinition name="tAccount" id="_t_account">
+    <itemComponent name="plan" id="_t_a_p"><typeRef>string</typeRef></itemComponent>
+    <itemComponent name="monthsActive" id="_t_a_m"><typeRef>number</typeRef></itemComponent>
+    <itemComponent name="openIncidents" id="_t_a_i"><typeRef>number</typeRef></itemComponent>
+  </itemDefinition>
+
+  <inputData name="Account" id="_i_account">
+    <variable name="Account" typeRef="tAccount"/>
+  </inputData>
+
+  <inputData name="Monthly Usage" id="_i_usage">
+    <variable name="Monthly Usage" typeRef="tMonthlyUsage"/>
+  </inputData>
+
+  <decision name="Usage Profile" id="_d_profile">
+    <variable name="Usage Profile"/>
+    <informationRequirement id="_ir_1"><requiredInput href="#_i_usage"/></informationRequirement>
+    <context id="_ctx_profile">
+      <contextEntry>
+        <variable name="total" typeRef="number"/>
+        <literalExpression><text>sum(Monthly Usage)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="average" typeRef="number"/>
+        <literalExpression><text>decimal(mean(Monthly Usage), 1)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="peak" typeRef="number"/>
+        <literalExpression><text>max(Monthly Usage)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="months" typeRef="number"/>
+        <literalExpression><text>count(Monthly Usage)</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+  <decision name="Renewal Discount" id="_d_discount">
+    <variable name="Renewal Discount" typeRef="number"/>
+    <informationRequirement id="_ir_2"><requiredInput href="#_i_account"/></informationRequirement>
+    <informationRequirement id="_ir_3"><requiredDecision href="#_d_profile"/></informationRequirement>
+    <decisionTable id="_dt_disc" hitPolicy="COLLECT" aggregation="SUM"
+                   preferredOrientation="Rule-as-Row">
+      <input id="_dt_disc_months">
+        <inputExpression typeRef="number"><text>Account.monthsActive</text></inputExpression>
+      </input>
+      <input id="_dt_disc_plan">
+        <inputExpression typeRef="string"><text>Account.plan</text></inputExpression>
+      </input>
+      <input id="_dt_disc_avg">
+        <inputExpression typeRef="number"><text>Usage Profile.average</text></inputExpression>
+      </input>
+      <input id="_dt_disc_inc">
+        <inputExpression typeRef="number"><text>Account.openIncidents</text></inputExpression>
+      </input>
+      <output id="_dt_disc_out" typeRef="number"/>
+
+      <rule id="_rc_loyalty_2y">
+        <inputEntry><text>&gt;= 24</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>10</text></outputEntry>
+      </rule>
+      <rule id="_rc_loyalty_5y">
+        <inputEntry><text>&gt;= 60</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>5</text></outputEntry>
+      </rule>
+      <rule id="_rc_enterprise">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>"Enterprise"</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>8</text></outputEntry>
+      </rule>
+      <rule id="_rc_heavy_use">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt;= 800</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <outputEntry><text>7</text></outputEntry>
+      </rule>
+      <rule id="_rc_service_credit">
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>-</text></inputEntry>
+        <inputEntry><text>&gt;= 3</text></inputEntry>
+        <outputEntry><text>5</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision name="Renewal Offer" id="_d_offer">
+    <variable name="Renewal Offer"/>
+    <informationRequirement id="_ir_4"><requiredInput href="#_i_account"/></informationRequirement>
+    <informationRequirement id="_ir_5"><requiredDecision href="#_d_discount"/></informationRequirement>
+    <context id="_ctx_offer">
+      <contextEntry>
+        <variable name="discountPercent" typeRef="number"/>
+        <!-- Independent credits can stack past what the business will honour. -->
+        <literalExpression><text>min(Renewal Discount, 25)</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="capped" typeRef="boolean"/>
+        <literalExpression><text>Renewal Discount &gt; 25</text></literalExpression>
+      </contextEntry>
+      <contextEntry>
+        <variable name="plan" typeRef="string"/>
+        <literalExpression><text>Account.plan</text></literalExpression>
+      </contextEntry>
+    </context>
+  </decision>
+
+</definitions>
