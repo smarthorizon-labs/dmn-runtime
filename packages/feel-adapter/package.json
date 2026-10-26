@@ -56,9 +56,9 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@lezer/common": "^1.2.3",
+    "@lezer/common": "^1.5.4",
     "decimal.js": "^10.4.3",
-    "lezer-feel": "^1.7.0",
-    "temporal-polyfill": "^0.3.2"
+    "lezer-feel": "^3.0.1",
+    "temporal-polyfill": "^1.0.6"
   }
 }
