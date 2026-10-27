@@ -1,0 +1,6 @@
+{
+  "$comment": "The DMN TCK commit the baseline, the published report and the recorded Drools output were all produced against. Moving it is a deliberate change: fetch, re-run, update the baseline and the report, and re-record Drools, in one pull request. See CONTRIBUTING.md.",
+  "repository": "https://github.com/dmn-tck/tck.git",
+  "commit": "3123f66842b7776e28f5613ed141def4695747a6",
+  "date": "2026-07-27"
+}

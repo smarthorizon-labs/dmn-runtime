@@ -31,7 +31,8 @@
     "hygiene": "node scripts/check-source-hygiene.mjs",
     "tck:report": "npm run build && tsx packages/tck-runner/src/report-cli.ts",
     "tck:report:check": "npm run build && tsx packages/tck-runner/src/report-cli.ts --check",
-    "version:set": "node scripts/set-version.mjs"
+    "version:set": "node scripts/set-version.mjs",
+    "tck:fetch": "node scripts/fetch-tck.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

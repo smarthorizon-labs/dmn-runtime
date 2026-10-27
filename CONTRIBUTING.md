@@ -68,6 +68,13 @@ that would have failed before your change is the minimum bar.
 For anything touching FEEL semantics, add a case to the conformance suite with
 the value the reference engines produce, not only the value you expect.
 
+The [DMN TCK](https://github.com/dmn-tck/tck) is fetched at a pinned commit,
+named in [`tck-version.json`](packages/tck-runner/tck-version.json):
+
+```bash
+npm run tck:fetch && npm run tck
+```
+
 If your change moves the TCK baseline, regenerate both the baseline and the
 published report — CI compares the committed report against a live run and
 fails if they disagree:
@@ -75,6 +82,27 @@ fails if they disagree:
 ```bash
 npm run tck:update && npm run tck:report
 ```
+
+### Moving the TCK pin
+
+The baseline, the published report and the recorded Drools output were all
+produced against the pinned commit, so the pin only moves deliberately, in one
+pull request that does all of this:
+
+1. Set the new commit and its date in
+   [`tck-version.json`](packages/tck-runner/tck-version.json), then
+   `npm run tck:fetch`.
+2. `npm run tck:update && npm run tck:report`, and explain in the pull request
+   every test that appeared, disappeared or changed category.
+3. Re-record Drools against the same commit — see
+   [differential testing](docs/differential-testing.md#regenerating-the-recording).
+   A recording from another commit would compare this runtime with Drools on
+   different tests.
+
+The tooling refuses to run against any other commit, so a newer TCK cannot
+show up as a wall of unexpected failures.
+
+### Examples
 
 The examples in [`examples/`](examples/README.md) are executed by the test
 suite. Adding a model there is a good way to cover a construct end to end, in

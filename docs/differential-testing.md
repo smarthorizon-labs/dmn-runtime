@@ -67,6 +67,10 @@ npm run diff -- --report ourDefects
 
 ## Regenerating the recording
 
+The recording is tied to the pinned TCK commit in
+[`tck-version.json`](../packages/tck-runner/tck-version.json): fetch it with
+`npm run tck:fetch` before exporting, and re-record whenever the pin moves.
+
 Requires Docker. The Java tool is built and run in containers, so no JDK or
 Maven installation is needed.
 

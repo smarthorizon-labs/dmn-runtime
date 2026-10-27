@@ -65,14 +65,11 @@ jobs:
 
       - run: npm ci
 
-      - name: Fetch the DMN TCK
-        # Blobless + sparse: the full checkout is ~430 MB, mostly PDFs and
-        # images. Only the models and test files are needed.
-        run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            https://github.com/dmn-tck/tck.git vendor/tck
-          cd vendor/tck
-          git sparse-checkout set --no-cone '/TestCases/**/*.dmn' '/TestCases/**/*.xml'
+      - name: Fetch the DMN TCK at the pinned commit
+        # The baseline, the published report and the recorded Drools output
+        # were all produced against packages/tck-runner/tck-version.json.
+        # The latest TCK would fail this job whenever the suite gains a test.
+        run: npm run tck:fetch
 
       - name: Run the TCK against the baseline
         # The baseline is asserted exactly. An unexpected pass

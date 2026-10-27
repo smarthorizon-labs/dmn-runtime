@@ -10,6 +10,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { buildBaseline, compareToBaseline, isClean, type Baseline } from './baseline.js';
+import { requirePinnedTck } from './pin.js';
 import { runTck, type TestOutcome } from './runner.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -18,13 +19,7 @@ const baselinePath = resolve(repoRoot, 'packages/tck-runner/tck-baseline.json');
 
 const update = process.argv.includes('--update');
 
-if (!existsSync(resolve(tckRoot, 'TestCases'))) {
-  console.error(`No DMN TCK checkout at ${tckRoot}.`);
-  console.error('Clone it first:');
-  console.error('  git clone --depth 1 https://github.com/dmn-tck/tck.git vendor/tck');
-  console.error('or set DMN_TCK_ROOT to an existing checkout.');
-  process.exit(2);
-}
+requirePinnedTck(tckRoot);
 
 const summary = runTck({ tckRoot });
 

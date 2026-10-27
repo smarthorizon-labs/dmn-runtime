@@ -6,6 +6,8 @@ Measured against the [DMN TCK](https://github.com/dmn-tck/tck), which is the
 only independent measure of DMN conformance there is. Every number here comes
 from a run of the suite; nothing is estimated and nothing is excluded.
 
+Suite version: commit [`3123f66`](https://github.com/dmn-tck/tck/tree/3123f66842b7776e28f5613ed141def4695747a6) of 2026-07-27. The commit is pinned, so these numbers can be reproduced exactly; tests added to the TCK since are not counted until the pin moves.
+
 This is **not** a claim of a DMN conformance level. Conformance levels are
 defined by the OMG specification, not by a test pass rate, and this runtime
 does not claim one.
@@ -187,7 +189,7 @@ wrong, rather than honest about a gap.
 ## Reproducing this
 
 ```bash
-git clone --depth 1 https://github.com/dmn-tck/tck.git vendor/tck
+npm run tck:fetch
 ```
 
 ```bash

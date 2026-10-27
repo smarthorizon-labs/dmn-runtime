@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { requirePinnedTck, TCK_PIN } from './pin.js';
 import { runTck, type RunSummary, type TestOutcome } from './runner.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -120,6 +121,12 @@ function render(summary: RunSummary): string {
   w('Measured against the [DMN TCK](https://github.com/dmn-tck/tck), which is the');
   w('only independent measure of DMN conformance there is. Every number here comes');
   w('from a run of the suite; nothing is estimated and nothing is excluded.');
+  w();
+  w(
+    `Suite version: commit [\`${TCK_PIN.commit.slice(0, 7)}\`](https://github.com/dmn-tck/tck/tree/${TCK_PIN.commit}) ` +
+      `of ${TCK_PIN.date}. The commit is pinned, so these numbers can be reproduced exactly; ` +
+      'tests added to the TCK since are not counted until the pin moves.',
+  );
   w();
   w('This is **not** a claim of a DMN conformance level. Conformance levels are');
   w('defined by the OMG specification, not by a test pass rate, and this runtime');
@@ -255,7 +262,7 @@ function render(summary: RunSummary): string {
   w('## Reproducing this');
   w();
   w('```bash');
-  w('git clone --depth 1 https://github.com/dmn-tck/tck.git vendor/tck');
+  w('npm run tck:fetch');
   w('```');
   w();
   w('```bash');
@@ -282,11 +289,7 @@ function render(summary: RunSummary): string {
   return `${out.join('\n')}\n`;
 }
 
-if (!existsSync(resolve(tckRoot, 'TestCases'))) {
-  console.error(`No DMN TCK checkout at ${tckRoot}.`);
-  console.error('  git clone --depth 1 https://github.com/dmn-tck/tck.git vendor/tck');
-  process.exit(2);
-}
+requirePinnedTck(tckRoot);
 
 const report = render(runTck({ tckRoot }));
 const check = process.argv.includes('--check');

@@ -16,6 +16,7 @@ import {
   type Divergence,
   type ReferenceResults,
 } from './differential.js';
+import { requirePinnedTck } from './pin.js';
 import { describeWire } from './wire.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -24,10 +25,7 @@ const referenceDir = resolve(repoRoot, 'packages/tck-runner/reference');
 const casesPath = resolve(referenceDir, 'differential-cases.json');
 const resultsPath = resolve(referenceDir, 'drools-results.json');
 
-if (!existsSync(resolve(tckRoot, 'TestCases'))) {
-  console.error(`No DMN TCK checkout at ${tckRoot}. See README.md.`);
-  process.exit(2);
-}
+requirePinnedTck(tckRoot);
 
 if (process.argv.includes('--export')) {
   mkdirSync(referenceDir, { recursive: true });
