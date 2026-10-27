@@ -1,12 +1,29 @@
 version: 2
 updates:
-  # Runtime dependencies are what ships to users, so security updates matter
-  # more here than version currency. Grouped so that a routine bump is one
-  # review rather than five.
+  # Grouped so that a routine bump is one review rather than five.
+  #
+  # Major versions of npm packages are not proposed. They are taken
+  # deliberately, one at a time, because the ones that matter here change
+  # behaviour rather than just the API:
+  #
+  # - `lezer-feel` is the FEEL grammar. Version 3 changed it so that decision
+  #   tables silently evaluate to null — no error, wrong answers.
+  # - `temporal-polyfill` and `decimal.js` define what dates and numbers *are*;
+  #   a change there can move evaluation results, which is a breaking change
+  #   for this project.
+  # - `@types/node` must track the Node.js floor, not the newest Node.js.
+  #   Newer types would accept APIs the floor does not have.
+  # - TypeScript 7 dropped the compiler API the declaration build depends on.
+  #
+  # Security advisories still surface regardless: as Dependabot alerts, and in
+  # the CI audit of production dependencies.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       dev-dependencies:
         dependency-type: development
